@@ -1,0 +1,8 @@
+snapshot: "2025-03-19"
+cities:
+  - name: "rio-de-janeiro"
+    files:
+      - "listings.csv.gz"
+      - "calendar.csv.gz"
+      - "reviews.csv.gz"
+    base_url: "https://data.insideairbnb.com/brazil/rj/rio-de-janeiro"
