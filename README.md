@@ -3,7 +3,7 @@
 ## 1. Resumo do Projeto
 Este projeto implementa um pipeline de dados ponta-a-ponta, escalável e nativo em nuvem, para processar e analisar os dados públicos do **Inside Airbnb**. A solução foi arquitetada utilizando tecnologias de Big Data no **Google Cloud Platform (GCP)**, com **Apache Spark** como motor de processamento distribuído.
 
-O objetivo principal foi evoluir de um pipeline baseado em scripts locais (Python/Pandas) e Hive para uma arquitetura moderna que utiliza o poder do processamento distribuído no **Google Dataproc**, armazenamento em um Data Lake no **Google Cloud Storage (GCS)** e consultas analíticas performáticas com a API de DataFrames do PySpark.
+O objetivo foi evoluir de um processo ETL tradicional para uma arquitetura moderna que utiliza o poder do processamento distribuído no **Google Dataproc**, armazenamento em um Data Lake no **Google Cloud Storage (GCS)** e consultas analíticas performáticas com a API de DataFrames do PySpark.
 
 ## 2. Fontes de Dados
 - **Inside Airbnb (dados abertos):**
@@ -12,7 +12,7 @@ O objetivo principal foi evoluir de um pipeline baseado em scripts locais (Pytho
   - `reviews.csv.gz` → Avaliações textuais e de nota deixadas pelos hóspedes.
 
 - **Configuração:**
-  - O arquivo `config/cities.yaml` centraliza a definição das cidades, snapshots de data e URLs base para a extração dos dados, tornando o pipeline flexível e fácil de estender para novas localidades.
+  - O arquivo `config/cities.yaml` centraliza a definição das cidades, snapshots de data e URLs para a extração dos dados.
 
 ## 3. Arquitetura da Solução no GCP
 
@@ -20,17 +20,16 @@ A arquitetura foi desenhada para ser robusta, escalável e gerenciada, aproveita
 
 **Tecnologias Core:**
 * **Google Cloud Storage (GCS):** Atua como nosso Data Lake central, armazenando o código-fonte, os dados processados em formato Parquet e os resultados das análises.
-* **Google Dataproc:** Fornece clusters Spark efêmeros e gerenciados, permitindo que o poder de processamento seja provisionado sob demanda apenas quando o pipeline está em execução.
-* **Apache Spark:** É o coração do processamento. Usamos PySpark para orquestrar os jobs de ETL e análise, aproveitando sua capacidade de processamento distribuído em memória.
-* **Hive Metastore:** Integrado ao Dataproc, gerencia os metadados das nossas tabelas, permitindo que os arquivos Parquet no GCS sejam consultados como se fossem tabelas de um banco de dados relacional.
+* **Google Dataproc:** Fornece clusters Spark efêmeros e gerenciados, permitindo que o poder de processamento seja provisionado sob demanda.
+* **Apache Spark (PySpark):** É o coração do processamento. Usamos PySpark para orquestrar os jobs de ETL e análise.
+* **Hive Metastore:** Integrado ao Dataproc, gerencia os metadados das nossas tabelas, permitindo que os arquivos Parquet no GCS sejam consultados como tabelas de um banco de dados relacional.
 
 **Fluxo de Dados:**
-
 ```
 1. Orquestração (Shell Script Local)
      |
      v
-2. Upload de Código (main_etl.py, run_spark_analyses.py) --> GCS (Bucket de Código)
+2. Upload de Código (main_etl.py, etc.) --> GCS (Bucket de Código)
      |
      v
 3. Submissão de Jobs --> Google Dataproc (Cluster Spark)
@@ -38,81 +37,118 @@ A arquitetura foi desenhada para ser robusta, escalável e gerenciada, aproveita
      +--> Job 1: ETL (main_etl.py)
      |      |
      |      +--> E: Baixa dados da Web
-     |      +--> T: Transforma com Spark
+     |      +--> T: Transforma com PySpark
      |      +--> L: Salva em Parquet no GCS e registra no Hive Metastore
      |
      +--> Job 2: Análise (run_spark_analyses.py)
             |
-            +--> Lê tabelas do Hive Metastore (dados no GCS)
+            +--> Lê tabelas do Hive Metastore
             +--> Executa análises com DataFrame API
             +--> Salva resultados em Parquet no GCS
 ```
 
-## 4. Pipeline de Dados
+## 4. Análises e Resultados
+O pipeline responde a diversas perguntas de negócio. Após a execução, os resultados são salvos no GCS e podem ser facilmente lidos e analisados, como mostram os exemplos abaixo (dados para o Rio de Janeiro).
 
-O pipeline é orquestrado pelo script `run_spark_pipeline.sh` e consiste em dois jobs Spark principais:
+### Análise 1: Hosts com Mais Reviews
+**Pergunta:** Quem são os anfitriões que mais recebem avaliações e quantos imóveis eles gerenciam?
+**Insight:** Os dados mostram uma clara profissionalização da plataforma. Hosts como "Omar Do Rio" não são pessoas alugando um quarto extra, mas sim empresas ou indivíduos gerenciando centenas de propriedades, concentrando milhares de reviews.
 
-### Job 1: ETL (`main_etl.py`)
-Este job consolida as etapas de Extração, Transformação e Carga.
-- **Extração (Extract):** O driver Spark baixa os arquivos `.csv.gz` da web, descomprime-os em memória e os distribui para os nós do cluster para serem paralelizados em DataFrames.
-- **Transformação (Transform):** Toda a lógica de limpeza de dados (preços, textos, datas), conversão de tipos e enriquecimento (adição de colunas de partição) é realizada de forma distribuída utilizando a API de DataFrames do Spark, substituindo o Pandas para ganho de escala.
-- **Carga (Load):** Os DataFrames transformados são salvos no Google Cloud Storage em formato **Parquet**, um formato colunar otimizado que oferece compressão superior e performance de leitura muito mais rápida para consultas analíticas. As partições (`city`, `snapshot_date`) são criadas automaticamente e as tabelas são registradas no Hive Metastore.
+| host_id   | host_name       | total_reviews | total_listings |
+|:----------|:----------------|:--------------|:---------------|
+| 6000862   | Omar Do Rio     | 5684          | 214            |
+| 310319158 | Suellen         | 4527          | 122            |
+| 74463624  | Mozart          | 4155          | 86             |
+| 46664224  | Rafael          | 4048          | 52             |
+| 2513825   | Newton          | 3576          | 65             |
+| 36744189  | Monica          | 3466          | 41             |
+| 15533343  | Yuri            | 3325          | 44             |
+| 1982737   | Estadia         | 2806          | 124            |
+| 347487511 | Rodrigo         | 2710          | 79             |
+| 29475411  | Bruno & Ricardo | 2571          | 30             |
 
-### Job 2: Análise (`run_spark_analyses.py`)
-Este job é responsável por executar as consultas analíticas sobre os dados já processados.
-- **Leitura:** Carrega as tabelas (`listings`, `calendar`, `reviews`) a partir do Hive Metastore.
-- **Análise:** Em vez de usar um arquivo `.sql`, este script executa uma série de funções em Python, onde cada função implementa uma consulta de negócio complexa usando a **API de DataFrames do Spark**. Essa abordagem oferece maior flexibilidade, testabilidade e integração com o ecossistema Python.
-- **Salvamento:** O resultado de cada análise é salvo em um diretório específico no GCS, também em formato Parquet, pronto para ser consumido por ferramentas de BI ou para análises mais aprofundadas.
+### Análise 2: Preço Médio por Bairro e Tipo de Quarto
+**Pergunta:** Quais são as combinações de bairro e tipo de acomodação mais caras no Rio de Janeiro?
+**Insight:** A análise revela alguns possíveis outliers (como um "Shared room" de R$25.000, que mereceria uma investigação), mas também confirma tendências esperadas. Bairros nobres como Joá, São Conrado, Leblon e Ipanema dominam o topo da lista para "Entire home/apt", com preços médios significativamente elevados.
 
-## 5. Análises Realizadas
-O pipeline responde a diversas perguntas de negócio, incluindo duas novas análises estratégicas:
+| room_type       | neighbourhood_cleansed | avg_price | total_listings |
+|:----------------|:-----------------------|:----------|:---------------|
+| Shared room     | São Conrado            | 25000.00  | 1              |
+| Entire home/apt | Estácio                | 13113.97  | 39             |
+| Hotel room      | Copacabana             | 12688.00  | 2              |
+| Entire home/apt | Joá                    | 7194.78   | 135            |
+| Entire home/apt | Coelho Neto            | 5680.00   | 2              |
+| Entire home/apt | São Conrado            | 4427.25   | 200            |
+| Private room    | Itanhangá              | 2696.15   | 66             |
+| Entire home/apt | Itanhangá              | 2624.72   | 101            |
+| Entire home/apt | Alto da Boa Vista      | 2378.50   | 32             |
+| Entire home/apt | Leblon                 | 1053.87   | 1712           |
+| Entire home/apt | Ipanema                | 1040.19   | 3231           |
 
-- **(NOVA) Análise de Hosts Veteranos:** Quem são os anfitriões mais antigos e quantos anúncios eles gerenciam?
-- **(NOVA) Análise de Sazonalidade de Preços:** Como o preço médio das diárias varia mês a mês ao longo do ano?
-- **Preço Médio por Bairro e Tipo de Quarto:** Quais são as áreas e tipos de acomodação mais caros?
-- **Disponibilidade Diária:** Qual o percentual de imóveis disponíveis em um determinado período?
-- **Impacto dos Superhosts:** Superhosts realmente têm melhores avaliações e preços diferentes?
-- **Estimativa de Taxa de Ocupação:** Quais listings são mais reservados?
-- **E muitas outras...** (Top anfitriões, distribuição de preço por tipo de propriedade, etc.)
+... e muitas outras análises, como sazonalidade de preços, impacto dos Superhosts, etc.
 
-## 6. Estrutura do Projeto
-A estrutura de arquivos foi simplificada para refletir a abordagem baseada em jobs Spark.
+## 5. Como Visualizar os Resultados
+Após a execução do pipeline, os resultados de cada análise são salvos em formato Parquet no seu bucket do GCS, no diretório `/results/`.
 
+A maneira mais fácil de visualizar esses dados é usando um notebook, como o **Google Colab**. O código abaixo conecta-se ao seu GCS, lê o resultado de uma análise específica e o exibe em um DataFrame do Pandas.
+
+### Notebook no Google Colab
+Abra um novo notebook no [Google Colab](https://colab.research.google.com/) e execute as células abaixo:
+
+**Célula 1: Autenticação**
+```python
+from google.colab import auth
+auth.authenticate_user()
+print('Authenticated successfully!')
 ```
-/inside_airbnb_spark_gcp
-|
-├── config/
-│   └── cities.yaml              # Arquivo de configuração de cidades e URLs
-|
-├── main_etl.py                    # Job Spark para Extração, Transformação e Carga (ETL)
-├── run_spark_analyses.py          # Job Spark para executar todas as análises
-|
-├── run_spark_pipeline.sh          # Script principal para orquestrar os jobs no Dataproc
-└── README.md                      # Esta documentação
+
+**Célula 2: Instalação de Bibliotecas**
+```python
+!pip install -q gcsfs pyarrow
+print('Libraries installed!')
 ```
 
-## 7. Como Replicar o Projeto
+**Célula 3: Leitura e Visualização dos Dados**
+```python
+import pandas as pd
 
-Siga os passos abaixo para executar o pipeline completo no seu próprio ambiente Google Cloud.
+# 1. ATUALIZE COM O NOME DO SEU BUCKET
+BUCKET_NAME = 'airbnb-data-pedro'
+
+# 2. ESCOLHA QUAL ANÁLISE VOCÊ QUER VER
+#    (o nome deve ser o mesmo da pasta criada no GCS)
+analysis_name = 'most_reviewed_hosts' # Ex: 'price_seasonality_analysis', 'top_listings_by_reviews', etc.
+
+# Constrói o caminho completo para os dados no GCS
+gcs_path = f'gs://{BUCKET_NAME}/results/{analysis_name}'
+print(f"Reading data from: {gcs_path}")
+
+# Lê os arquivos Parquet diretamente para um DataFrame Pandas
+try:
+    df = pd.read_parquet(gcs_path)
+
+    # Mostra o DataFrame!
+    print(f"\nDisplaying results for: {analysis_name}")
+    display(df)
+
+except Exception as e:
+    print(f"\nAn error occurred: {e}")
+    print("Please check if the bucket name and analysis name are correct.")
+```
+
+## 6. Como Replicar o Projeto
 
 ### Pré-requisitos
 1.  Uma conta Google Cloud com um projeto ativo e faturamento habilitado.
-2.  O [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) instalado e autenticado (`gcloud auth login`).
+2.  O [Google Cloud SDK (`gcloud`)](https://cloud.google.com/sdk/docs/install) instalado e autenticado.
 3.  Um bucket no Google Cloud Storage (GCS).
 
 ### Passo 1: Configurar o Ambiente
-1.  Clone este repositório para sua máquina local.
-2.  Abra o arquivo `run_spark_pipeline.sh` e atualize as seguintes variáveis com seus próprios valores:
-    ```bash
-    REGION="us-central1" # Ou sua região de preferência
-    CLUSTER="airbnb-spark-cluster"
-    BUCKET_NAME="seu-nome-de-bucket-aqui"
-    PROJECT_ID="seu-project-id-aqui"
-    ```
+1.  Clone este repositório.
+2.  Abra o arquivo `run_spark_pipeline.sh` e atualize as variáveis `REGION`, `CLUSTER`, `BUCKET_NAME` e `PROJECT_ID` com seus próprios valores.
 
 ### Passo 2: Criar o Cluster Dataproc
-Antes de rodar o pipeline, você precisa de um cluster Spark ativo. Execute o comando abaixo no seu terminal. **Este é um passo único de setup.**
-
+Execute o comando abaixo no seu terminal para criar o cluster. **Este é um passo único de setup.**
 ```bash
 gcloud dataproc clusters create airbnb-spark-cluster \
   --project=seu-project-id-aqui \
@@ -121,30 +157,18 @@ gcloud dataproc clusters create airbnb-spark-cluster \
   --master-machine-type=n1-standard-4 \
   --worker-machine-type=n1-standard-4 \
   --num-workers=2 \
-  --enable-component-gateway \
-  --optional-components=JUPYTER
+  --enable-component-gateway
 ```
 *Aguarde alguns minutos até que o cluster esteja com o status `RUNNING`.*
 
 ### Passo 3: Executar o Pipeline Completo
-Com o cluster ativo, execute o script principal. Ele cuidará de todo o resto.
-
+Com o cluster ativo, execute o script principal.
 ```bash
 bash run_spark_pipeline.sh
 ```
-Este comando irá:
-1.  Fazer o upload dos scripts PySpark para seu bucket no GCS.
-2.  Submeter o job de ETL (`main_etl.py`) para o cluster.
-3.  Após a conclusão do ETL, submeter o job de análise (`run_spark_analyses.py`).
+Isso irá executar o job de ETL e, em seguida, o job de análises.
 
-### Passo 4: Verificar os Resultados
-Após a execução, você pode encontrar os artefatos nos seguintes locais do seu bucket GCS:
-- **Dados Processados:** `gs://<seu-bucket>/processed/` (em formato Parquet, particionado)
-- **Resultados das Análises:** `gs://<seu-bucket>/results/` (cada análise em sua própria pasta)
-
-## 8. Próximos Passos e Melhorias
+## 7. Próximos Passos
 - **Orquestração com Cloud Composer (Airflow):** Substituir o `run_spark_pipeline.sh` por um DAG no Airflow para ter agendamento, retentativas e monitoramento robustos.
 - **Uso de Dataproc Serverless:** Migrar os jobs para o Dataproc Serverless para eliminar a necessidade de gerenciar a infraestrutura do cluster.
-- **Visualização de Dados:** Conectar os resultados salvos no GCS a uma ferramenta de BI como o **Looker Studio** para criar dashboards interativos.
-- **Qualidade de Dados:** Implementar um passo de verificação de qualidade dos dados no pipeline usando bibliotecas como `pydeequ`.
-- **CI/CD:** Automatizar o deploy de novas versões do pipeline usando Cloud Build e GitHub Actions.
+- **Visualização de Dados:** Conectar os resultados salvos no GCS a uma ferramenta de BI como o **Looker Studio** ou o **Power BI** para criar dashboards interativos.
